@@ -1,0 +1,235 @@
+---
+title: 'STAA57 Final Project Report '
+author: "Team G2"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## echo=FALSE stops the code chunk from appearing in the html document
+## warning=FALSE / message=FALSE stop R warnings/messages from appearing in the knit document
+library(tidyverse)
+library(modelr)
+```
+
+
+***
+
+<!-- 
+(everything below in here is an .html comment)
+
+Instructions: 
+- Use typical structure of data analysis report, w/ sections:
+    + Introduction
+    + Data
+    + Analysis
+    + Summary
+    + Appendix (optional)
+- Report should be 5 pages MAX (when compiled/knit as pdf)
+- Appendix does not count towards page limit
+- Put all your data in a separate "./data/" sub-folder 
+- Submit compressed project folder 
+- You submissions should be reproducible (i.e. I should be able to   
+  re-compile your report with a click of the Preview/Knit button) 
+
+-->
+
+## Introduction 
+
+Upon being asked whether a University education was worth it, we collectively began to ponder on the many factors that would constitute as being “worth it”. As a group, we finalized that the education we receive will be deemed successful, if upon graduation we receive a job in our industry, if we are making a relatively high salary when compared to the tuition we pay to get our degree and finally if we are able to pay off all student debts in a respectable amount of time (approximately 5 to 10 years). To demonstrate our questions, we will discover how the benefits of University have changed overtime. To answer this, we will investigate four related sub-topics that are more specific and can be answered through data analysis. We will be seeing how the wages of those with and without a university degree have changed over time, if students can pay off their debts within the average amount of time, the change in tuition, and what the relationship is between a person’s job and their program. 
+
+## Data 
+
+```{r}
+lfs_2019 = read_csv('./data/lfs-2019-january-1.csv')
+lfs_2009 = read_csv('./data/lfs-2009-january-1.csv')
+lfs_1999 = read_csv('./data/lfs-1999-january-1.csv')
+
+grad_of_1976 = read.csv('data/1976-1.csv')
+grad_of_1990 = read.csv('data/1990-1.csv')
+grad_of_2009 = read.csv('data/2009-1.csv')
+
+tuition_increase = read_csv('./data/37100003.csv')
+```
+
+## Analysis 
+
+### Relation between Hourly Wage and University Degree by Year
+
+```{r}
+lfs_99 = lfs_1999 %>% 
+  mutate(HRLYEARN = HRLYEARN * 1.4683) %>% 
+  rename(EDUC = EDUC90)
+lfs_09 = lfs_2009 %>% 
+  mutate(HRLYEARN = HRLYEARN * 1.1819) %>%  
+  rename(EDUC = EDUC90)
+
+lfs = bind_rows(lfs_99, lfs_09, lfs_2019)
+
+lfs %>% 
+  mutate(`Went to University` = EDUC >= 5) %>% 
+  filter(LFSSTAT < 3) %>% 
+  ggplot(aes(x = HRLYEARN)) + 
+  geom_density(aes(colour = `Went to University`), na.rm = TRUE) + 
+  facet_grid(SURVYEAR ~ .) + 
+  scale_x_continuous(breaks = c(25*(0:5))) + 
+  geom_vline(data = filter(lfs, SURVYEAR == 1999), aes(xintercept = median(filter(lfs, SURVYEAR == 1999, EDUC < 5)$HRLYEARN, na.rm = TRUE)), colour = "red") +
+  geom_vline(data = filter(lfs, SURVYEAR == 1999), aes(xintercept = median(filter(lfs, SURVYEAR == 1999, EDUC >= 5)$HRLYEARN, na.rm = TRUE)), colour = "blue") + 
+  geom_vline(data = filter(lfs, SURVYEAR == 2009), aes(xintercept = median(filter(lfs, SURVYEAR == 2009, EDUC < 5)$HRLYEARN, na.rm = TRUE)), colour = "red") + 
+  geom_vline(data = filter(lfs, SURVYEAR == 2009), aes(xintercept = median(filter(lfs, SURVYEAR == 2009, EDUC >= 5)$HRLYEARN, na.rm = TRUE)), colour = "blue") + 
+  geom_vline(data = filter(lfs, SURVYEAR == 2019), aes(xintercept = median(filter(lfs, SURVYEAR == 2019, EDUC < 5)$HRLYEARN, na.rm = TRUE)), colour = "red") + 
+  geom_vline(data = filter(lfs, SURVYEAR == 2019), aes(xintercept = median(filter(lfs, SURVYEAR == 2019, EDUC >= 5)$HRLYEARN, na.rm = TRUE)), colour = "blue") + 
+  guides(colour = guide_legend(reverse=TRUE))
+```
+
+#### Prediction
+
+(*R output tables can be converted to .html with* `knitr::kable()`) 
+
+```{r}
+data = data.frame(year = c(1999, 2009, 2019), no_uni = c(median(filter(lfs, SURVYEAR == 1999, EDUC < 5)$HRLYEARN, na.rm = TRUE), median(filter(lfs, SURVYEAR == 2009, EDUC < 5)$HRLYEARN, na.rm = TRUE), median(filter(lfs, SURVYEAR == 2019, EDUC < 5)$HRLYEARN, na.rm = TRUE)), uni = c(uni_99 = median(filter(lfs, SURVYEAR == 1999, EDUC >= 5)$HRLYEARN, na.rm = TRUE),median(filter(lfs, SURVYEAR == 2009, EDUC >= 5)$HRLYEARN, na.rm = TRUE), median(filter(lfs, SURVYEAR == 2019, EDUC >= 5)$HRLYEARN, na.rm = TRUE))) %>% 
+  mutate(diff = uni - no_uni)
+data
+lm_uni = data %>% 
+  lm(uni ~ year, data = . )
+lm_no_uni = data %>% 
+  lm(no_uni ~ year, data = . )
+
+predicted = tibble(year = 2029) %>% 
+  add_predictions(lm_no_uni , var = "no_uni") %>% 
+  add_predictions(lm_uni , var = "uni") %>% 
+  mutate(diff = uni - no_uni)
+predicted
+```
+
+### Relation between Job and Program of Study 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+grad_of_1976$relation_lvl = grad_of_1976$dv10
+grad_of_1976_subset = grad_of_1976 %>%
+  select(relation_lvl) %>% 
+  filter(relation_lvl %in% 1:3) %>%
+  group_by(relation_lvl) %>% 
+  summarise(freq = sum(relation_lvl/relation_lvl)) %>% 
+  mutate(survey = "1976")
+
+grad_of_1990$relation_lvl = grad_of_1990$rellwj
+grad_of_1990_subset = grad_of_1990 %>%
+  select(relation_lvl) %>% 
+  filter(relation_lvl %in% 1:3) %>%
+  group_by(relation_lvl) %>% 
+  summarise(freq = sum(relation_lvl/relation_lvl)) %>% 
+  mutate(survey = "1990")
+
+grad_of_2009$relation_lvl = grad_of_2009$em_q37
+grad_of_2009_subset = grad_of_2009 %>%
+  select(relation_lvl) %>% 
+  filter(relation_lvl %in% 1:3) %>%
+  group_by(relation_lvl) %>% 
+  summarise(freq = sum(relation_lvl/relation_lvl)) %>% 
+  mutate(survey = "2009")
+
+job_program_relation = bind_rows(grad_of_1976_subset, grad_of_1990_subset, grad_of_2009_subset) %>%
+  mutate(relation_level = factor(relation_lvl, levels = 1:3, labels = c("Related", "Partly Related", "Not Related"))) %>% 
+  select(relation_level, freq, survey)
+
+job_program_relation
+
+ggplot(job_program_relation, aes(fill=relation_level, y=freq, x=survey)) + 
+    geom_bar(position="fill", stat="identity") + xlab("Graduation Year") + ylab("Frequency") + labs(title = "Relation of Job and Program", fill = "Relation Level")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+column_1976 = grad_of_1976 %>%
+  select(relation_lvl) %>% 
+  filter(relation_lvl %in% 1:3) %>% 
+  mutate(year = 1976)
+
+column_1990 = grad_of_1990 %>%
+  select(relation_lvl) %>% 
+  filter(relation_lvl %in% 1:3)%>% 
+  mutate(year = 1990)
+
+column_2009 = grad_of_2009 %>%
+  select(relation_lvl) %>% 
+  filter(relation_lvl %in% 1:3)%>% 
+  mutate(year = 2009)
+
+grad_of_all = rbind(column_1976, column_1990, column_2009)
+
+not_related = grad_of_all %>% 
+  group_by(year) %>% 
+  summarise(not_related_percentage = sum(relation_lvl==3)/sum(relation_lvl %in% 1:3)) %>% 
+  mutate(year = factor(year, levels = c(1976, 1990, 2009), labels = c("1976", "1990", "2009"))) %>% 
+  mutate(not_related_percentage = not_related_percentage*100)
+
+partly_related = grad_of_all %>% 
+  group_by(year) %>% 
+  summarise(partly_related_percentage = sum(relation_lvl==2)/sum(relation_lvl %in% 1:3))%>% 
+  mutate(year = factor(year, levels = c(1976, 1990, 2009), labels = c("1976", "1990", "2009")))%>% 
+  mutate(partly_related_percentage = partly_related_percentage*100)
+
+related = grad_of_all %>% 
+  group_by(year) %>% 
+  summarise(related_percentage = sum(relation_lvl==1)/sum(relation_lvl %in% 1:3))%>% 
+  mutate(year = factor(year, levels = c(1976, 1990, 2009), labels = c("1976", "1990", "2009")))%>% 
+  mutate(related_percentage = related_percentage*100)
+
+related
+partly_related
+not_related
+
+ggplot(related, aes(x=year, y=related_percentage, group=1)) +
+    geom_line() + geom_smooth(method='lm') + xlab("Graduation Year") + ylab("Percentage") + labs(title = "Percentage of Jobs Related to Programs")
+
+ggplot(partly_related, aes(x=year, y=partly_related_percentage, group=1)) +
+    geom_line() + geom_smooth(method='lm')+ xlab("Graduation Year") + ylab("Percentage") + labs(title = "Percentage of Jobs Partly Related to Programs")
+
+ggplot(not_related, aes(x=year, y=not_related_percentage, group=1)) +
+    geom_line() + geom_smooth(method='lm')+ xlab("Graduation Year") + ylab("Percentage") + labs(title = "Percentage of Jobs Not Related to Programs")
+```
+
+### Relation between Cost of Tuition and Program of Study
+
+```{r, echo = FALSE}
+tuition_increase = read_csv('./data/37100003.csv') %>% filter(!is.na(REF_DATE)) %>% filter(!is.na(VALUE)) %>% filter(!is.na(`Field of study`))%>% mutate(REF_DATE = as.integer(substring(REF_DATE,1,4)))  %>% group_by(REF_DATE, `Field of study`) %>% summarise( VALUE = sum(VALUE)) %>% ungroup() %>% select(REF_DATE, `Field of study`, VALUE) %>% rename(YEAR = REF_DATE) 
+
+#taken from the bank of canada inflation calculator (based on 2019 values)
+infVals = c(1.25, 1.22, 1.20, 1.18, 1.16, 1.14, 1.11, 1.10, 1.08, 1.07,1.06,1.04,1.02)
+
+v = 1
+while (v < tuition_increase%>%nrow()+1) {
+  tuition_increase[v,3] <- as.double(tuition_increase[v,3])*infVals[as.integer(tuition_increase[v,1])-2005]
+  v = v + 1
+}
+
+tuition_increase %>% ggplot(aes(x=YEAR, y=VALUE)) +
+  scale_y_continuous(limits=c(0,225000)) +
+  scale_x_continuous(limits = c(2005,2019)) +
+  geom_smooth( method = "lm", se=FALSE) +
+  geom_point(aes(color = `Field of study`)) 
+
+#PREDICTIONS
+lm_out = tuition_increase %>% lm( VALUE ~ YEAR, data = . )
+gap_pred = tibble( YEAR = c(2019,2020,2021,2022,2023) ) %>% add_predictions( lm_out , var = "VALUE")
+gap_pred
+
+```
+## Summary 
+
+Therefore, we can conclude from the following analyses that the University education system is not worth it. With the costs we pay, effort and time we have to take in order to achieve the degree, the results do not amount to much success. 
+
+From the first set of graphs above, the average hourly wage of all three years are fairly close to each other. With a closer look, it can be seen that the average wage of those without a university degree is steadily growing each year, while the average wage of those with a university degree grows noticeably from 1999 to 2009, and then decreases slightly from 2009 to 2019. It is also shown that the difference between the average wages has changed significantly over the years. It increases by about \$0.37/hr from 1999 to 2009, then decreases by about \$0.66/hr from 2009 to 2019, indicating that going to university now has less worth than before, since the gap has narrowed. From the prediction, the average wages of those with a university degree and without both steadily increase, but the difference between average wages only increases by $0.02/hr from 2019 to 2029. This shows that the growth of the difference from now on is very slow. Despite that, it is still an increase and the actual value of the wage gap is about \$11.50. So, in the long-term, attending university will help people land jobs with a higher pay, though the difference isn't very large in the grand scheme of things. 
+
+The second set of graphs depict the jobs related to the program of study show that the percentage of people who are working at jobs related/partly related to programs are decreasing, while the percentage of jobs unrelated to program is increasing. With this we predict that the relation of jobs to program of study will continue to decrase. The trends extrapolated in these visualizations are precisely what was dicussed earlier when we look at the hourly wage by achievement of a degree. Similar to what was seen in those graphs, we can see a change in the industry in 2009. This change led to a steady decline in the percentage of the labour force currently employed in jobs they were educated in. If less and less individuals are working the industry they studied within, their education was not of any assistance to them. 
+
+The final graph depicts the rise in tuition costs overtime per program of study. It is clear that over all, since prior to 2008, there has been a steady increase in tuition costs over all program of studies. Though specifically, in more popular programs of study (i.e. business degrees, nursing, engineering etc. all have large enrolement numbers and all constitute for the greatest tuition costs.). Over the course of under 10 years, this large of an increased occurred, with no signs of any decreases, this increase in tuition only continues to bridge the gap between education being worth it or not. It seems, the greater the increase in tuition, the greater the debts held by graduating students which in turns closes the gap between pay between degree holders and non degree holders. 
+
+All in all, through techniques learnt in this course, we have been able to extrapolate data sets to predict and analyze trends in the industry, from looking at salaries earned by professionals in different industries, to the workers who are actually employeed within their industry and finally to the steep rise in tuition across programs of study, to prove that a University education is not worth it. 
+
+***  
+
+
+
